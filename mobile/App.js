@@ -727,8 +727,27 @@ export default function App() {
                           style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedCatId === cat._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
                           onPress={() => {
                             setSelectedCatId(cat._id);
-                            setSelectedBrandId('');
-                            setSelectedProdId('');
+                            
+                            // Auto-select Brand if only one exists for this category
+                            const filteredBrands = brands.filter(b => b.category?._id === cat._id);
+                            if (filteredBrands.length === 1) {
+                              setSelectedBrandId(filteredBrands[0]._id);
+                              
+                              // Auto-select Product if only one exists for this category/brand
+                              const filteredProds = products.filter(p => 
+                                p.category?._id === cat._id && 
+                                p.brand?._id === filteredBrands[0]._id &&
+                                p.status === 'Available'
+                              );
+                              if (filteredProds.length === 1) {
+                                setSelectedProdId(filteredProds[0]._id);
+                              } else {
+                                setSelectedProdId('');
+                              }
+                            } else {
+                              setSelectedBrandId('');
+                              setSelectedProdId('');
+                            }
                           }}
                         >
                           <Text style={{ color: selectedCatId === cat._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
@@ -751,7 +770,18 @@ export default function App() {
                               style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedBrandId === brand._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
                               onPress={() => {
                                 setSelectedBrandId(brand._id);
-                                setSelectedProdId('');
+                                
+                                // Auto-select Product if only one exists for this category/brand
+                                const filteredProds = products.filter(p => 
+                                  p.category?._id === selectedCatId && 
+                                  p.brand?._id === brand._id &&
+                                  p.status === 'Available'
+                                );
+                                if (filteredProds.length === 1) {
+                                  setSelectedProdId(filteredProds[0]._id);
+                                } else {
+                                  setSelectedProdId('');
+                                }
                               }}
                             >
                               <Text style={{ color: selectedBrandId === brand._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>

@@ -89,12 +89,38 @@ export default function Transactions({
       items.map(item => {
         if (item.id === id) {
           const updated = { ...item, [field]: value };
-          // Reset child cascades if parent changes
+          // Reset child cascades and auto-select if parent changes
           if (field === 'categoryId') {
             updated.brandId = '';
             updated.productId = '';
+            
+            // Auto-select brand if only one exists for this category
+            const filteredBrands = brands.filter(b => b.category?._id === value);
+            if (filteredBrands.length === 1) {
+              updated.brandId = filteredBrands[0]._id;
+              
+              // Auto-select product if only one exists for this brand
+              const filteredProds = productsList.filter(p => 
+                p.category?._id === value && 
+                p.brand?._id === filteredBrands[0]._id &&
+                p.status === 'Available'
+              );
+              if (filteredProds.length === 1) {
+                updated.productId = filteredProds[0]._id;
+              }
+            }
           } else if (field === 'brandId') {
             updated.productId = '';
+            
+            // Auto-select product if only one exists for this brand
+            const filteredProds = productsList.filter(p => 
+              p.category?._id === item.categoryId && 
+              p.brand?._id === value &&
+              p.status === 'Available'
+            );
+            if (filteredProds.length === 1) {
+              updated.productId = filteredProds[0]._id;
+            }
           }
           return updated;
         }
