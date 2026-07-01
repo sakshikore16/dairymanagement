@@ -23,6 +23,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ecaaeea6-d5a5-4cbb-a6de-27a2c922eaef"
+      }
+    },
+    "owner": "sakshikore16"
   }
 }
