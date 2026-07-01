@@ -28,6 +28,7 @@ export default function App() {
   const [triggerSupplyAdd, setTriggerSupplyAdd] = useState(false);
   const [triggerCollectionAdd, setTriggerCollectionAdd] = useState(false);
   const [triggerExpenseAdd, setTriggerExpenseAdd] = useState(false);
+  const [preSelectedCustomerId, setPreSelectedCustomerId] = useState('');
 
   // Auto Login Flow & Port Migration on Mount
   useEffect(() => {
@@ -92,11 +93,16 @@ export default function App() {
   }, [isLoggedIn]);
 
   // Quick Action triggers from Dashboard
-  const handleQuickAction = (action) => {
+  const handleQuickAction = (action, payload) => {
     if (action === 'excel-url') {
       return api.getExcelUrl();
     }
     if (action === 'add-supply') {
+      setPreSelectedCustomerId('');
+      setTriggerSupplyAdd(true);
+      setActiveTab('transactions');
+    } else if (action === 'add-supply-for-customer') {
+      setPreSelectedCustomerId(payload);
       setTriggerSupplyAdd(true);
       setActiveTab('transactions');
     } else if (action === 'add-collection') {
@@ -175,6 +181,7 @@ export default function App() {
             onRefresh={refreshData} 
             triggerAddOpen={triggerCustomerAdd} 
             setTriggerAddOpen={setTriggerCustomerAdd} 
+            onQuickAction={handleQuickAction}
           />
         );
       case 'products':
@@ -195,6 +202,8 @@ export default function App() {
             onRefresh={refreshData} 
             triggerAddOpen={triggerSupplyAdd} 
             setTriggerAddOpen={setTriggerSupplyAdd} 
+            preSelectedCustomerId={preSelectedCustomerId}
+            setPreSelectedCustomerId={setPreSelectedCustomerId}
           />
         );
       case 'collections':

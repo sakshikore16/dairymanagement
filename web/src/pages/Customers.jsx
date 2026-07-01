@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 
-export default function Customers({ customersList, onRefresh, triggerAddOpen, setTriggerAddOpen }) {
+export default function Customers({ customersList, onRefresh, triggerAddOpen, setTriggerAddOpen, onQuickAction }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [areaFilter, setAreaFilter] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -360,6 +360,13 @@ export default function Customers({ customersList, onRefresh, triggerAddOpen, se
               <h2>📖 Traditional Paper Ledger Register</h2>
               
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => onQuickAction('add-supply-for-customer', selectedCustomer._id)}
+                  style={{ padding: '10px 16px', minHeight: '44px', fontSize: '16px' }}
+                >
+                  🥛 + Record Supply Entry
+                </button>
                 {/* PDF generation URLs */}
                 <a 
                   href={api.getLedgerPdfUrl(selectedCustomer._id, startDate, endDate)} 

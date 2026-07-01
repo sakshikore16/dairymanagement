@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import NumberPad from '../components/NumberPad';
 
 export default function Transactions({ 
   transactionsList, 
@@ -8,26 +7,23 @@ export default function Transactions({
   productsList, 
   onRefresh, 
   triggerAddOpen, 
-  setTriggerAddOpen 
+  setTriggerAddOpen,
+  preSelectedCustomerId,
+  setPreSelectedCustomerId
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [productFilterText, setProductFilterText] = useState('');
 
-  // Cart/Form State
+  // Form State
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
-  const [txTime, setTxTime] = useState(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }));
-  const [cart, setCart] = useState([]); // Array of { productId, name, price, qty }
-
-  // Cascading product selectors
-  const [selectedCatId, setSelectedCatId] = useState('');
-  const [selectedBrandId, setSelectedBrandId] = useState('');
-  const [selectedProdId, setSelectedProdId] = useState('');
-  const [typedQty, setTypedQty] = useState('');
-
-  // Master Lists loaded on open
-  const [categories, setCategories] = useState([]);
-  const [brands, setBrands] = useState([]);
+  const [txTime, setTxTime] = useState(
+    new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+  );
+  
+  // supplyQuantities state maps productId -> quantity
+  const [supplyQuantities, setSupplyQuantities] = useState({});
 
   useEffect(() => {
     if (triggerAddOpen) {
@@ -36,85 +32,43 @@ export default function Transactions({
     }
   }, [triggerAddOpen]);
 
-  useEffect(() => {
-    if (showAddModal) {
-      loadSelectors();
-    }
-  }, [showAddModal]);
-
-  const loadSelectors = async () => {
-    try {
-      const cats = await api.getCategories();
-      const brs = await api.getBrands();
-      setCategories(cats);
-      setBrands(brs);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleOpenRecordSupply = () => {
-    setSelectedCustomerId('');
     setTxDate(new Date().toISOString().split('T')[0]);
     setTxTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }));
-    setCart([]);
-    setSelectedCatId('');
-    setSelectedBrandId('');
-    setSelectedProdId('');
-    setTypedQty('');
+    setSupplyQuantities({});
+    setProductFilterText('');
+
+    if (preSelectedCustomerId) {
+      setSelectedCustomerId(preSelectedCustomerId);
+    } else {
+      setSelectedCustomerId('');
+    }
     setShowAddModal(true);
   };
 
-  // Selection cascading lookups
-  const filteredBrands = brands.filter(b => b.category?._id === selectedCatId);
-  const filteredProducts = productsList.filter(p => 
-    p.category?._id === selectedCatId && 
-    p.brand?._id === selectedBrandId && 
-    p.status === 'Available'
-  );
-
-  const activeProduct = productsList.find(p => p._id === selectedProdId);
-
-  const handleAddToCart = () => {
-    if (!selectedProdId || !typedQty || Number(typedQty) <= 0) {
-      alert("Please select a product and enter a valid quantity.");
-      return;
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    if (setPreSelectedCustomerId) {
+      setPreSelectedCustomerId('');
     }
-
-    // Check stock warning
-    if (activeProduct.currentStock < Number(typedQty)) {
-      if (!window.confirm(`Product stock is only ${activeProduct.currentStock}. Are you sure you want to sell ${typedQty} items? (Stock will go negative)`)) {
-        return;
-      }
-    }
-
-    const cartItem = {
-      productId: activeProduct._id,
-      brandName: activeProduct.brand?.name,
-      categoryName: activeProduct.category?.name,
-      name: activeProduct.name,
-      price: activeProduct.sellingPrice,
-      unit: activeProduct.unit,
-      qty: Number(typedQty)
-    };
-
-    // Add to cart or increment quantity if already exists
-    const existingIdx = cart.findIndex(item => item.productId === cartItem.productId);
-    if (existingIdx > -1) {
-      const updated = [...cart];
-      updated[existingIdx].qty += cartItem.qty;
-      setCart(updated);
-    } else {
-      setCart([...cart, cartItem]);
-    }
-
-    // Reset product selections for next item
-    setSelectedProdId('');
-    setTypedQty('');
   };
 
-  const handleRemoveFromCart = (index) => {
-    setCart(cart.filter((_, i) => i !== index));
+  // Quantity updates
+  const handleQtyChange = (prodId, val) => {
+    const num = Math.max(0, parseInt(val) || 0);
+    setSupplyQuantities(prev => ({
+      ...prev,
+      [prodId]: num
+    }));
+  };
+
+  const adjustQty = (prodId, delta) => {
+    const current = supplyQuantities[prodId] || 0;
+    const next = Math.max(0, current + delta);
+    setSupplyQuantities(prev => ({
+      ...prev,
+      [prodId]: next
+    }));
   };
 
   // Submit transaction to server
@@ -124,24 +78,40 @@ export default function Transactions({
       alert("Please select a customer.");
       return;
     }
-    if (cart.length === 0) {
-      alert("Please add at least one product to the supply list.");
+
+    const payloadProducts = Object.entries(supplyQuantities)
+      .filter(([_, qty]) => qty > 0)
+      .map(([prodId, qty]) => ({
+        productId: prodId,
+        quantity: qty
+      }));
+
+    if (payloadProducts.length === 0) {
+      alert("Please enter a quantity for at least one product.");
       return;
+    }
+
+    // Verify stock availability
+    for (const item of payloadProducts) {
+      const prod = productsList.find(p => p._id === item.productId);
+      if (prod && prod.currentStock < item.quantity) {
+        const proceed = window.confirm(
+          `Product "${prod.brand?.name} ${prod.name}" has only ${prod.currentStock} units in stock. Selling ${item.quantity} will make inventory negative. Do you want to proceed?`
+        );
+        if (!proceed) return;
+      }
     }
 
     const payload = {
       customerId: selectedCustomerId,
       date: txDate,
       time: txTime,
-      products: cart.map(item => ({
-        productId: item.productId,
-        quantity: item.qty
-      }))
+      products: payloadProducts
     };
 
     try {
       await api.createTransaction(payload);
-      setShowAddModal(false);
+      handleCloseModal();
       onRefresh();
     } catch (err) {
       alert(err.message);
@@ -160,8 +130,36 @@ export default function Transactions({
     }
   };
 
-  // Calculate cart total
-  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  // Group active products by Category, then Brand
+  const getGroupedProducts = () => {
+    const groups = {};
+    const filtered = productsList.filter(p => {
+      if (p.status !== 'Available') return false;
+      if (!productFilterText) return true;
+      const search = productFilterText.toLowerCase();
+      const pName = p.name.toLowerCase();
+      const bName = (p.brand?.name || '').toLowerCase();
+      const cName = (p.category?.name || '').toLowerCase();
+      return pName.includes(search) || bName.includes(search) || cName.includes(search);
+    });
+
+    filtered.forEach(p => {
+      const cat = p.category?.name || 'Uncategorized Category';
+      const brand = p.brand?.name || 'Generic Brand';
+      if (!groups[cat]) groups[cat] = {};
+      if (!groups[cat][brand]) groups[cat][brand] = [];
+      groups[cat][brand].push(p);
+    });
+    return groups;
+  };
+
+  const groupedProducts = getGroupedProducts();
+
+  // Calculate Running Grand Total
+  const grandTotal = Object.entries(supplyQuantities).reduce((sum, [prodId, qty]) => {
+    const prod = productsList.find(p => p._id === prodId);
+    return sum + (prod ? prod.sellingPrice * qty : 0);
+  }, 0);
 
   // Filter transaction list
   const filteredTransactions = transactionsList.filter(t => {
@@ -274,208 +272,135 @@ export default function Transactions({
       {/* RECORD TRANSACTION MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '800px', width: '95%' }}>
+          <div className="modal-content" style={{ maxWidth: '850px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <h2>🥛 Record Daily Supply</h2>
             
-            <form onSubmit={handleSaveTransaction} style={{ marginTop: '15px' }}>
-              <div className="grid-2">
-                <div className="form-group">
-                  <label className="form-label">Delivery Date</label>
-                  <input type="date" className="form-control" required value={txDate} onChange={e => setTxDate(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Delivery Time</label>
-                  <input type="text" className="form-control" required value={txTime} onChange={e => setTxTime(e.target.value)} />
-                </div>
-              </div>
-
-              {/* Customer Selector */}
-              <div className="form-group">
-                <label className="form-label">Select Customer Account *</label>
-                <select 
-                  className="form-control"
-                  required
-                  value={selectedCustomerId}
-                  onChange={e => setSelectedCustomerId(e.target.value)}
-                >
-                  <option value="">-- Choose Customer --</option>
-                  {customersList.filter(c => c.status === 'Active').map(c => (
-                    <option key={c._id} value={c._id}>{c.name} ({c.area || 'No Area'})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Product Cart Addition Layout */}
-              <div style={{ backgroundColor: 'var(--bg-paper)', padding: '20px', borderRadius: '12px', border: '2px solid var(--border-color)', marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '18px', color: 'var(--primary)', marginBottom: '15px', fontWeight: 'bold' }}>🛒 Add Delivery Item</h3>
+            <form onSubmit={handleSaveTransaction} style={{ marginTop: '15px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ overflowY: 'auto', paddingRight: '5px', flex: 1 }}>
                 
-                {/* Step 1: Category */}
-                <div className="form-group">
-                  <label className="form-label" style={{ fontSize: '15px' }}>1. Select Product Category</label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {categories.map(c => (
-                      <button
-                        key={c._id}
-                        type="button"
-                        className="btn"
-                        onClick={() => {
-                          setSelectedCatId(c._id);
-                          setSelectedBrandId('');
-                          setSelectedProdId('');
-                        }}
-                        style={{
-                          backgroundColor: selectedCatId === c._id ? 'var(--primary)' : 'white',
-                          color: selectedCatId === c._id ? 'white' : 'var(--text-main)',
-                          border: '2px solid var(--border-color)',
-                          padding: '8px 16px',
-                          minHeight: '40px',
-                          fontSize: '15px'
-                        }}
-                      >
-                        {c.name}
-                      </button>
-                    ))}
+                {/* Meta Inputs Grid */}
+                <div className="grid-3" style={{ gap: '15px', marginBottom: '15px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Delivery Date</label>
+                    <input type="date" className="form-control" required value={txDate} onChange={e => setTxDate(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Delivery Time</label>
+                    <input type="text" className="form-control" required value={txTime} onChange={e => setTxTime(e.target.value)} />
+                  </div>
+                  
+                  {/* Customer Selector */}
+                  <div className="form-group">
+                    <label className="form-label">Select Customer Account *</label>
+                    <select 
+                      className="form-control"
+                      required
+                      value={selectedCustomerId}
+                      onChange={e => setSelectedCustomerId(e.target.value)}
+                      disabled={!!preSelectedCustomerId}
+                    >
+                      <option value="">-- Choose Customer --</option>
+                      {customersList.filter(c => c.status === 'Active').map(c => (
+                        <option key={c._id} value={c._id}>{c.name} ({c.area || 'No Area'})</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                {/* Step 2: Brand */}
-                {selectedCatId && (
-                  <div className="form-group">
-                    <label className="form-label" style={{ fontSize: '15px' }}>2. Select Brand</label>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {filteredBrands.map(b => (
-                        <button
-                          key={b._id}
-                          type="button"
-                          className="btn"
-                          onClick={() => {
-                            setSelectedBrandId(b._id);
-                            setSelectedProdId('');
-                          }}
-                          style={{
-                            backgroundColor: selectedBrandId === b._id ? 'var(--primary)' : 'white',
-                            color: selectedBrandId === b._id ? 'white' : 'var(--text-main)',
-                            border: '2px solid var(--border-color)',
-                            padding: '8px 16px',
-                            minHeight: '40px',
-                            fontSize: '15px'
-                          }}
-                        >
-                          {b.name}
-                        </button>
-                      ))}
-                    </div>
+                <div style={{ borderTop: '2px solid var(--border-color)', paddingTop: '15px', marginBottom: '15px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>🛒 Delivery Items Checklist</h3>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="🔍 Quick filter items by name..." 
+                      value={productFilterText} 
+                      onChange={e => setProductFilterText(e.target.value)}
+                      style={{ maxWidth: '300px', minHeight: '38px', padding: '5px 10px', fontSize: '14px' }}
+                    />
                   </div>
-                )}
 
-                {/* Step 3: Variant */}
-                {selectedBrandId && (
-                  <div className="form-group">
-                    <label className="form-label" style={{ fontSize: '15px' }}>3. Select Product Variant</label>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {filteredProducts.map(p => (
-                        <button
-                          key={p._id}
-                          type="button"
-                          className="btn"
-                          onClick={() => setSelectedProdId(p._id)}
-                          style={{
-                            backgroundColor: selectedProdId === p._id ? 'var(--primary)' : 'white',
-                            color: selectedProdId === p._id ? 'white' : 'var(--text-main)',
-                            border: '2px solid var(--border-color)',
-                            padding: '8px 16px',
-                            minHeight: '40px',
-                            fontSize: '15px'
-                          }}
-                        >
-                          {p.name} (Rs. {p.sellingPrice})
-                        </button>
-                      ))}
+                  {/* Grouped Product List */}
+                  {Object.keys(groupedProducts).length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', backgroundColor: 'var(--bg-paper)', borderRadius: '12px' }}>
+                      No active products found matching the filter.
                     </div>
-                  </div>
-                )}
-
-                {/* Step 4: Quantity & NumberPad */}
-                {selectedProdId && (
-                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '15px', marginTop: '15px' }}>
-                    <p style={{ fontSize: '16px', marginBottom: '10px' }}>
-                      Selected: <strong>{activeProduct?.brand?.name} {activeProduct?.name}</strong> @ <strong>Rs.{activeProduct?.sellingPrice} / item</strong>
-                    </p>
-                    <div className="grid-2" style={{ alignItems: 'flex-start' }}>
-                      <div>
-                        <label className="form-label">4. Enter Quantity</label>
-                        <NumberPad 
-                          value={typedQty} 
-                          onChange={setTypedQty} 
-                          onConfirm={handleAddToCart}
-                        />
+                  ) : (
+                    Object.entries(groupedProducts).map(([catName, brandsMap]) => (
+                      <div key={catName} style={{ marginBottom: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
+                        <div style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', padding: '8px 15px', fontWeight: 'bold', fontSize: '16px' }}>
+                          🥛 {catName}
+                        </div>
+                        <div style={{ padding: '15px', backgroundColor: 'var(--bg-card)' }}>
+                          {Object.entries(brandsMap).map(([brandName, productsArray]) => (
+                            <div key={brandName} style={{ marginBottom: '15px' }}>
+                              <h4 style={{ fontSize: '14px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '3px', marginBottom: '8px', fontWeight: 'bold' }}>
+                                {brandName}
+                              </h4>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {productsArray.map(p => (
+                                  <div key={p._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', backgroundColor: 'var(--bg-paper)', borderRadius: '8px', flexWrap: 'wrap', gap: '10px' }}>
+                                    <div style={{ flex: 1, minWidth: '200px' }}>
+                                      <strong style={{ fontSize: '16px' }}>{p.name}</strong>
+                                      <br />
+                                      <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                                        Price: Rs. {p.sellingPrice.toFixed(2)} | Stock: {p.currentStock} {p.unit}
+                                      </span>
+                                    </div>
+                                    
+                                    {/* Qty Counter controls */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => adjustQty(p._id, -1)}
+                                        className="btn btn-outline"
+                                        style={{ minHeight: '34px', minWidth: '34px', padding: 0, fontSize: '18px', fontWeight: 'bold' }}
+                                      >
+                                        -
+                                      </button>
+                                      <input 
+                                        type="number"
+                                        min="0"
+                                        className="form-control"
+                                        value={supplyQuantities[p._id] || ''}
+                                        placeholder="0"
+                                        onChange={e => handleQtyChange(p._id, e.target.value)}
+                                        style={{ width: '60px', minHeight: '34px', textAlign: 'center', fontSize: '16px', fontWeight: 'bold', padding: 0 }}
+                                      />
+                                      <button 
+                                        type="button" 
+                                        onClick={() => adjustQty(p._id, 1)}
+                                        className="btn btn-outline"
+                                        style={{ minHeight: '34px', minWidth: '34px', padding: 0, fontSize: '18px', fontWeight: 'bold' }}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ padding: '20px', backgroundColor: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                        <h4 style={{ marginBottom: '10px' }}>Stock Alert Details:</h4>
-                        <p style={{ fontSize: '16px', color: activeProduct?.currentStock <= activeProduct?.minimumStockAlert ? 'var(--danger)' : 'var(--success)' }}>
-                          • Current Inventory: <strong>{activeProduct?.currentStock} units</strong>
-                        </p>
-                        <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '5px' }}>
-                          Entering quantity reduces stock automatically once the transaction is saved.
-                        </p>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={handleAddToCart}
-                          style={{ width: '100%', marginTop: '30px' }}
-                        >
-                          ➕ Add to Cart List
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </div>
 
-              {/* Cart Summary */}
-              {cart.length > 0 && (
-                <div style={{ marginBottom: '25px' }}>
-                  <h3 style={{ fontSize: '18px', marginBottom: '10px' }}>Cart Items List ({cart.length})</h3>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: 'var(--bg-paper)', borderBottom: '2px solid var(--border-color)', color: 'var(--text-main)' }}>
-                        <th style={{ padding: '10px', textAlign: 'left', fontSize: '14px' }}>Product</th>
-                        <th style={{ padding: '10px', textAlign: 'right', fontSize: '14px' }}>Rate</th>
-                        <th style={{ padding: '10px', textAlign: 'center', fontSize: '14px' }}>Qty</th>
-                        <th style={{ padding: '10px', textAlign: 'right', fontSize: '14px' }}>Amount</th>
-                        <th style={{ padding: '10px', textAlign: 'center', fontSize: '14px' }}>Remove</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cart.map((item, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
-                          <td style={{ padding: '10px', fontSize: '15px' }}><strong>{item.brandName}</strong> {item.name}</td>
-                          <td style={{ padding: '10px', textAlign: 'right', fontSize: '15px' }}>Rs. {item.price}</td>
-                          <td style={{ padding: '10px', textAlign: 'center', fontSize: '15px' }}><strong>{item.qty}</strong></td>
-                          <td style={{ padding: '10px', textAlign: 'right', fontSize: '15px', fontWeight: 'bold' }}>Rs. {(item.price * item.qty).toFixed(2)}</td>
-                          <td style={{ padding: '10px', textAlign: 'center' }}>
-                            <button type="button" onClick={() => handleRemoveFromCart(idx)} style={{ border: 'none', background: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '18px' }}>×</button>
-                          </td>
-                        </tr>
-                      ))}
-                      <tr style={{ backgroundColor: 'var(--bg-paper)', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                        <td colSpan="3" style={{ padding: '12px', textAlign: 'right' }}>Grand Total:</td>
-                        <td style={{ padding: '12px', textAlign: 'right', fontSize: '18px', color: 'var(--danger)' }}>Rs. {cartTotal.toFixed(2)}</td>
-                        <td></td>
-                      </tr>
-                    </tbody>
-                  </table>
+              {/* Modal Footer (Always visible) */}
+              <div style={{ borderTop: '2px solid var(--border-color)', paddingTop: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
+                <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                  Total Items Value: <strong style={{ color: 'var(--danger)', fontSize: '24px' }}>Rs. {grandTotal.toFixed(2)}</strong>
                 </div>
-              )}
-
-              {/* Form Controls */}
-              <div style={{ display: 'flex', gap: '10px', marginTop: '25px', justifyContent: 'flex-end', borderTop: '2px solid var(--border-color)', paddingTop: '20px' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-success" disabled={cart.length === 0}>
-                  ✓ Save & Deliver Daily Supply
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button type="button" className="btn btn-outline" onClick={handleCloseModal}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-success" disabled={grandTotal === 0}>
+                    ✓ Save & Deliver Daily Supply
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -41,14 +41,11 @@ export default function App() {
 
   // Supply Flow States
   const [supplyCustomerId, setSupplyCustomerId] = useState('');
-  const [supplyCart, setSupplyCart] = useState([]);
-  const [step, setStep] = useState(1); // 1: Category, 2: Brand, 3: Variant & Qty, 4: Cart
+  const [step, setStep] = useState(1); // 1: Customer select, 2: Product qty checklist
+  const [supplyQuantities, setSupplyQuantities] = useState({});
+  const [mobileProductFilter, setMobileProductFilter] = useState('');
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
-  const [selectedCatId, setSelectedCatId] = useState('');
-  const [selectedBrandId, setSelectedBrandId] = useState('');
-  const [selectedProdId, setSelectedProdId] = useState('');
-  const [typedQty, setTypedQty] = useState('');
 
   // Collection Flow States
   const [collCustomerId, setCollCustomerId] = useState('');
@@ -198,33 +195,23 @@ export default function App() {
     Linking.openURL(`${apiUrl}/reports/ledger/${custId}/pdf`);
   };
 
-  // Add Product to Cart
-  const handleAddToCart = () => {
-    const activeProd = products.find(p => p._id === selectedProdId);
-    if (!activeProd || !typedQty || Number(typedQty) <= 0) return;
-
-    const cartItem = {
-      productId: activeProd._id,
-      brandName: activeProd.brand?.name,
-      name: activeProd.name,
-      price: activeProd.sellingPrice,
-      qty: Number(typedQty),
-      unit: activeProd.unit
-    };
-
-    setSupplyCart([...supplyCart, cartItem]);
-    setSelectedProdId('');
-    setTypedQty('');
-    setStep(4); // show cart
+  // Quantity adjust handlers
+  const handleMobileQtyChange = (prodId, val) => {
+    const num = Math.max(0, parseInt(val) || 0);
+    setSupplyQuantities(prev => ({ ...prev, [prodId]: num }));
   };
 
-  // Submit supply transaction
-  const handleSaveSupply = async () => {
-    if (!supplyCustomerId || supplyCart.length === 0) return;
+  const adjustMobileQty = (prodId, delta) => {
+    const current = supplyQuantities[prodId] || 0;
+    const next = Math.max(0, current + delta);
+    setSupplyQuantities(prev => ({ ...prev, [prodId]: next }));
+  };
+
+  const submitSupply = async (payloadProducts) => {
     try {
       const payload = {
         customerId: supplyCustomerId,
-        products: supplyCart.map(i => ({ productId: i.productId, quantity: i.qty }))
+        products: payloadProducts
       };
       const res = await fetch(`${apiUrl}/transactions`, {
         method: 'POST',
@@ -233,13 +220,54 @@ export default function App() {
       });
       if (res.ok) {
         Alert.alert("Success", "Supply transaction recorded!");
-        setSupplyCart([]);
+        setSupplyQuantities({});
         setSupplyCustomerId('');
         setActiveTab('dashboard');
         fetchData();
+      } else {
+        const errData = await res.json();
+        Alert.alert("Error", errData.error || "Failed to save supply.");
       }
     } catch (err) {
       Alert.alert("Error", err.message);
+    }
+  };
+
+  // Submit supply transaction
+  const handleSaveSupply = async () => {
+    if (!supplyCustomerId) return;
+    const payloadProducts = Object.entries(supplyQuantities)
+      .filter(([_, qty]) => qty > 0)
+      .map(([prodId, qty]) => ({
+        productId: prodId,
+        quantity: qty
+      }));
+
+    if (payloadProducts.length === 0) {
+      Alert.alert("Error", "Please enter quantity for at least one product.");
+      return;
+    }
+
+    let needsConfirmation = false;
+    for (const item of payloadProducts) {
+      const prod = products.find(p => p._id === item.productId);
+      if (prod && prod.currentStock < item.quantity) {
+        needsConfirmation = true;
+        break;
+      }
+    }
+
+    if (needsConfirmation) {
+      Alert.alert(
+        "Low Stock Warning",
+        "Some items exceed current stock. Selling them will drive inventory negative. Proceed?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Yes, Save", onPress: () => submitSupply(payloadProducts) }
+        ]
+      );
+    } else {
+      await submitSupply(payloadProducts);
     }
   };
 
@@ -552,6 +580,17 @@ export default function App() {
                       <Text style={styles.btnText}>📞 Call Customer ({selectedCustomer.mobileNumber})</Text>
                     </TouchableOpacity>
                   )}
+                  <TouchableOpacity 
+                    style={[styles.callBtn, { backgroundColor: '#1e40af', marginTop: 8 }]} 
+                    onPress={() => {
+                      setSupplyCustomerId(selectedCustomer._id);
+                      setSupplyQuantities({});
+                      setStep(2);
+                      setActiveTab('supply');
+                    }}
+                  >
+                    <Text style={styles.btnText}>🥛 Record Supply Entry</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={[styles.callBtn, { backgroundColor: '#16a34a', marginTop: 8 }]} onPress={() => handleOpenLedgerPdf(selectedCustomer._id)}>
                     <Text style={styles.btnText}>📄 Open PDF Ledger Statement</Text>
                   </TouchableOpacity>
@@ -606,7 +645,15 @@ export default function App() {
               <View>
                 <Text style={{ fontSize: 18, marginBottom: 12, color: isDark ? '#ffffff' : '#1e293b' }}>Select Customer Account:</Text>
                 {customers.filter(c => c.status === 'Active').map(c => (
-                  <TouchableOpacity key={c._id} style={themeStyles.card} onPress={() => { setSupplyCustomerId(c._id); setStep(2); }}>
+                  <TouchableOpacity 
+                    key={c._id} 
+                    style={themeStyles.card} 
+                    onPress={() => { 
+                      setSupplyCustomerId(c._id); 
+                      setSupplyQuantities({});
+                      setStep(2); 
+                    }}
+                  >
                     <Text style={{ fontSize: 18, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>{c.name}</Text>
                     <Text style={themeStyles.textMuted}>📍 {c.area}</Text>
                   </TouchableOpacity>
@@ -616,79 +663,139 @@ export default function App() {
 
             {step === 2 && (
               <View>
-                <TouchableOpacity onPress={() => setStep(1)} style={{ marginBottom: 15 }}><Text style={{ color: '#1e40af', fontSize: 16 }}>← Back to Customers</Text></TouchableOpacity>
-                <Text style={{ fontSize: 18, marginBottom: 12, color: isDark ? '#ffffff' : '#1e293b' }}>Select Product Category:</Text>
-                {categories.map(c => (
-                  <TouchableOpacity key={c._id} style={themeStyles.card} onPress={() => { setSelectedCatId(c._id); setStep(3); }}>
-                    <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b', textAlign: 'center' }}>{c.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {step === 3 && (
-              <View>
-                <TouchableOpacity onPress={() => setStep(2)} style={{ marginBottom: 15 }}><Text style={{ color: '#1e40af', fontSize: 16 }}>← Back to Categories</Text></TouchableOpacity>
-                <Text style={{ fontSize: 18, marginBottom: 12, color: isDark ? '#ffffff' : '#1e293b' }}>Choose Product Variant & Enter Quantity:</Text>
-                
-                {/* Variant list */}
-                <ScrollView horizontal style={{ marginBottom: 15 }}>
-                  {products.filter(p => p.category?._id === selectedCatId && p.status === 'Available').map(p => (
-                    <TouchableOpacity 
-                      key={p._id} 
-                      style={[themeStyles.card, { marginRight: 10, minWidth: 150, borderColor: selectedProdId === p._id ? '#1e40af' : '#cbd5e1' }]} 
-                      onPress={() => setSelectedProdId(p._id)}
-                    >
-                      <Text style={{ fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>{p.brand?.name} {p.name}</Text>
-                      <Text style={themeStyles.textMuted}>Rate: Rs. {p.sellingPrice}</Text>
-                      <Text style={themeStyles.textMuted}>Stock: {p.currentStock}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                {selectedProdId && (
-                  <View>
-                    <Text style={{ fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 10, color: isDark ? '#ffffff' : '#1e293b' }}>
-                      Qty: {typedQty || '0'}
-                    </Text>
-                    
-                    {/* Number Pad Grid */}
-                    <View style={styles.numpadGrid}>
-                      {numpadKeys.map(key => (
-                        <TouchableOpacity key={key} style={styles.numpadBtn} onPress={() => handleNumpadPress(key)}>
-                          <Text style={{ fontSize: 24, fontWeight: 'bold' }}>{key}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <TouchableOpacity style={styles.saveBtn} onPress={handleAddToCart}>
-                      <Text style={styles.btnText}>➕ Add item to supply cart</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {step === 4 && (
-              <View>
-                <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 12, color: isDark ? '#ffffff' : '#1e293b' }}>Cart Items List</Text>
-                {supplyCart.map((item, idx) => (
-                  <View key={idx} style={[themeStyles.card, { display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }]}>
-                    <View>
-                      <Text style={{ fontSize: 18, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>{item.brandName} {item.name}</Text>
-                      <Text style={themeStyles.textMuted}>{item.qty} items x Rs.{item.price}</Text>
-                    </View>
-                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e40af' }}>Rs.{item.qty * item.price}</Text>
-                  </View>
-                ))}
-
-                <TouchableOpacity style={[styles.addBtn, { marginBottom: 10 }]} onPress={() => setStep(2)}>
-                  <Text style={styles.btnText}>➕ Add Another Product</Text>
+                {/* Back controls */}
+                <TouchableOpacity onPress={() => setStep(1)} style={{ marginBottom: 15 }}>
+                  <Text style={{ color: '#1e40af', fontSize: 16 }}>← Back to Customers</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSupply}>
-                  <Text style={styles.btnText}>✓ Confirm & Complete Delivery</Text>
-                </TouchableOpacity>
+                {/* Customer card header */}
+                {(() => {
+                  const cust = customers.find(c => c._id === supplyCustomerId);
+                  return cust ? (
+                    <View style={[themeStyles.card, { borderLeftWidth: 5, borderLeftColor: '#1e40af', marginBottom: 15 }]}>
+                      <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>
+                        Customer: {cust.name}
+                      </Text>
+                      <Text style={themeStyles.textMuted}>📍 Area: {cust.area || 'N/A'}</Text>
+                    </View>
+                  ) : null;
+                })()}
+
+                <Text style={{ fontSize: 18, marginBottom: 12, color: isDark ? '#ffffff' : '#1e293b' }}>
+                  Enter Product Quantities:
+                </Text>
+
+                {/* Search / Filter input */}
+                <TextInput
+                  style={[themeStyles.input, { marginBottom: 15 }]}
+                  placeholder="🔍 Search products by name..."
+                  placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
+                  value={mobileProductFilter}
+                  onChangeText={setMobileProductFilter}
+                />
+
+                {/* Group products by Category */}
+                {(() => {
+                  // Filter products
+                  const filtered = products.filter(p => {
+                    if (p.status !== 'Available') return false;
+                    if (!mobileProductFilter) return true;
+                    const search = mobileProductFilter.toLowerCase();
+                    const pName = p.name.toLowerCase();
+                    const bName = (p.brand?.name || '').toLowerCase();
+                    const cName = (p.category?.name || '').toLowerCase();
+                    return pName.includes(search) || bName.includes(search) || cName.includes(search);
+                  });
+
+                  // Group by category
+                  const grouped = {};
+                  filtered.forEach(p => {
+                    const catName = p.category?.name || 'Uncategorized';
+                    if (!grouped[catName]) grouped[catName] = [];
+                    grouped[catName].push(p);
+                  });
+
+                  const keys = Object.keys(grouped);
+                  if (keys.length === 0) {
+                    return (
+                      <View style={[themeStyles.card, { padding: 20 }]}>
+                        <Text style={{ textAlign: 'center', color: 'gray' }}>No active products match search.</Text>
+                      </View>
+                    );
+                  }
+
+                  return keys.map(catName => (
+                    <View key={catName} style={{ marginBottom: 20 }}>
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1e40af', textTransform: 'uppercase', marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#1e40af', paddingBottom: 2 }}>
+                        🥛 {catName}
+                      </Text>
+                      
+                      {grouped[catName].map(p => {
+                        const qty = supplyQuantities[p._id] || 0;
+                        return (
+                          <View key={p._id} style={[themeStyles.card, { display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, marginVertical: 4 }]}>
+                            <View style={{ flex: 1, marginRight: 10 }}>
+                              <Text style={{ fontSize: 16, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>
+                                {p.brand?.name} {p.name}
+                              </Text>
+                              <Text style={themeStyles.textMuted}>
+                                Rate: Rs.{p.sellingPrice} | Stock: {p.currentStock} {p.unit}
+                              </Text>
+                            </View>
+
+                            {/* Qty controls */}
+                            <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                              <TouchableOpacity 
+                                style={[styles.qtyBtn, { backgroundColor: isDark ? '#334155' : '#cbd5e1' }]} 
+                                onPress={() => adjustMobileQty(p._id, -1)}
+                              >
+                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>-</Text>
+                              </TouchableOpacity>
+                              <TextInput 
+                                style={[themeStyles.input, { width: 50, height: 38, textAlign: 'center', marginHorizontal: 5, padding: 0, fontWeight: 'bold', fontSize: 16 }]} 
+                                keyboardType="numeric"
+                                value={qty > 0 ? qty.toString() : ''}
+                                placeholder="0"
+                                placeholderTextColor={isDark ? '#64748b' : '#cbd5e1'}
+                                onChangeText={text => handleMobileQtyChange(p._id, text)}
+                              />
+                              <TouchableOpacity 
+                                style={[styles.qtyBtn, { backgroundColor: isDark ? '#334155' : '#cbd5e1' }]} 
+                                onPress={() => adjustMobileQty(p._id, 1)}
+                              >
+                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>+</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ));
+                })()}
+
+                {/* Calculate and show totals */}
+                {(() => {
+                  const total = Object.entries(supplyQuantities).reduce((sum, [prodId, qty]) => {
+                    const p = products.find(prod => prod._id === prodId);
+                    return sum + (p ? p.sellingPrice * qty : 0);
+                  }, 0);
+
+                  return (
+                    <View style={{ marginTop: 10, borderTopWidth: 2, borderTopColor: '#cbd5e1', paddingTop: 15 }}>
+                      <Text style={{ fontSize: 18, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b', marginBottom: 10 }}>
+                        Total Value: <Text style={{ color: '#dc2626', fontSize: 24, fontWeight: '900' }}>Rs. {total.toFixed(2)}</Text>
+                      </Text>
+
+                      <TouchableOpacity 
+                        style={[styles.saveBtn, { opacity: total > 0 ? 1 : 0.6 }]} 
+                        disabled={total === 0} 
+                        onPress={handleSaveSupply}
+                      >
+                        <Text style={styles.btnText}>✓ Confirm & Complete Delivery</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()}
               </View>
             )}
           </View>
@@ -974,5 +1081,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     margin: 5,
+  },
+  qtyBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   }
 });
