@@ -1,0 +1,459 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&family=Source+Code+Pro:wght@400;600&display=swap');
+
+:root {
+  /* Color System */
+  --bg-paper: #faf8f5;
+  --bg-card: #ffffff;
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+  --primary: #1e40af;
+  --primary-light: #eff6ff;
+  --success: #15803d;
+  --success-light: #f0fdf4;
+  --danger: #b91c1c;
+  --danger-light: #fef2f2;
+  --border-color: #cbd5e1;
+  --ledger-line: #f87171; /* red line for ledger grids */
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+}
+
+.dark {
+  --bg-paper: #0f172a;
+  --bg-card: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --primary: #3b82f6;
+  --primary-light: #172554;
+  --success: #22c55e;
+  --success-light: #052e16;
+  --danger: #ef4444;
+  --danger-light: #450a0a;
+  --border-color: #334155;
+  --ledger-line: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background-color: var(--bg-paper);
+  color: var(--text-main);
+  line-height: 1.5;
+  font-size: 18px; /* Large font size */
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+/* App Container Layout */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 280px;
+  background-color: var(--bg-card);
+  border-right: 3px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  position: fixed;
+  height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  padding: 30px;
+  margin-left: 280px;
+  padding-bottom: 80px; /* offset for bottom bar on small screens */
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+  .main-content {
+    margin-left: 0;
+    padding: 15px;
+    padding-bottom: 90px;
+  }
+}
+
+/* Typography styles */
+h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 20px;
+}
+
+h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+/* Giant Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 24px;
+  font-size: 18px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 52px;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+}
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-success {
+  background-color: var(--success);
+  color: white;
+}
+.btn-success:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background-color: var(--danger);
+  color: white;
+}
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn-outline {
+  background-color: transparent;
+  border: 2px solid var(--border-color);
+  color: var(--text-main);
+}
+.btn-outline:hover {
+  background-color: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Ledger Card Design */
+.register-card {
+  background-color: var(--bg-card);
+  border: 3px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+}
+
+/* Traditional Ledger Grid (Bahi-Khata) */
+.ledger-book {
+  background-color: #fffdf9; /* Cream notebook color */
+  border: 3px double #b91c1c; /* Thick red border */
+  border-radius: 8px;
+  overflow-x: auto;
+  box-shadow: var(--shadow-md);
+  margin-top: 15px;
+}
+
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ledger-table th {
+  background-color: #fee2e2;
+  color: #991b1b;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 12px;
+  text-transform: uppercase;
+  border-bottom: 3px double var(--ledger-line);
+  text-align: left;
+}
+
+.ledger-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #fee2e2;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 16px;
+  color: #3f2a1e;
+}
+
+.ledger-table tr td:nth-child(2) {
+  font-family: inherit; /* Keep description legible */
+}
+
+/* Highlight columns like traditional credit/debit register */
+.ledger-table td.supply-amount {
+  color: #b91c1c;
+  font-weight: 600;
+  border-left: 2px solid var(--ledger-line);
+  text-align: right;
+}
+
+.ledger-table td.collect-amount {
+  color: var(--success);
+  font-weight: 600;
+  border-left: 2px solid var(--ledger-line);
+  text-align: right;
+}
+
+.ledger-table td.running-bal {
+  font-weight: 700;
+  border-left: 2px solid var(--ledger-line);
+  text-align: right;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-main);
+}
+
+.form-control {
+  width: 100%;
+  padding: 14px;
+  font-size: 18px;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  outline: none;
+  min-height: 52px;
+}
+.form-control:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+/* Grid Layouts */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 768px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+@media (max-width: 900px) {
+  .grid-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+@media (max-width: 1024px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Navigation items */
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 12px;
+  color: var(--text-main);
+  text-decoration: none;
+  font-weight: 600;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.nav-item:hover, .nav-item.active {
+  background-color: var(--primary-light);
+  color: var(--primary);
+}
+
+/* Bottom Bar for Mobile */
+.bottom-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .bottom-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background-color: var(--bg-card);
+    border-top: 3px solid var(--border-color);
+    z-index: 100;
+    justify-content: space-around;
+    align-items: center;
+  }
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    flex: 1;
+    padding: 5px 0;
+  }
+  .bottom-nav-item.active {
+    color: var(--primary);
+  }
+}
+
+/* Number Pad Utility */
+.numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 320px;
+  margin: 15px auto;
+}
+
+.numpad-btn {
+  background-color: var(--bg-paper);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  padding: 18px;
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+}
+.numpad-btn:active {
+  background-color: var(--primary-light);
+  border-color: var(--primary);
+}
+
+/* Modal dialog custom styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 15px;
+}
+
+.modal-content {
+  background-color: var(--bg-card);
+  border: 3px solid var(--border-color);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 550px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.badge-success {
+  background-color: var(--success-light);
+  color: var(--success);
+}
+.badge-danger {
+  background-color: var(--danger-light);
+  color: var(--danger);
+}
+
+/* Dark theme overrides for ledger elements */
+.dark .ledger-book {
+  background-color: var(--bg-card);
+  border-color: var(--border-color);
+}
+.dark .ledger-table th {
+  background-color: var(--primary-light);
+  color: var(--primary);
+  border-bottom: 3px double var(--border-color);
+}
+.dark .ledger-table td {
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-color);
+}
+.dark .ledger-table td.supply-amount {
+  color: var(--danger);
+  border-left: 2px solid var(--border-color);
+}
+.dark .ledger-table td.collect-amount {
+  color: var(--success);
+  border-left: 2px solid var(--border-color);
+}
+.dark .ledger-table td.running-bal {
+  border-left: 2px solid var(--border-color);
+}

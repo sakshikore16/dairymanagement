@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Yash General Store",
+    "slug": "dairy-register",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#faf8f5"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#faf8f5"
+      },
+      "package": "com.dairy.register"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
