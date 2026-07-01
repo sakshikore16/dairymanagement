@@ -28,10 +28,20 @@ export default function Customers({ customersList, onRefresh, triggerAddOpen, se
     }
   }, [triggerAddOpen]);
 
+  const getTodayDateStr = () => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
   // Load customer ledger details
   const handleSelectCustomer = async (cust) => {
     setSelectedCustomer(cust);
     setLoadingLedger(true);
+    setStartDate(getTodayDateStr());
+    setEndDate(getTodayDateStr());
     try {
       const data = await api.getCustomerLedger(cust._id);
       setLedgerData(data);
@@ -193,6 +203,8 @@ export default function Customers({ customersList, onRefresh, triggerAddOpen, se
     }
     return { ...entry, runningBal: currentRunningBal };
   });
+
+  const displayLedger = [...ledgerWithBalances].reverse();
 
   // Filter main directory
   const filteredCustomers = customersList.filter(c => {
@@ -413,18 +425,14 @@ export default function Customers({ customersList, onRefresh, triggerAddOpen, se
                     </tr>
                   </thead>
                   <tbody>
-                    {ledgerWithBalances.length === 0 ? (
+                    {displayLedger.length === 0 ? (
                       <tr>
                         <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
                           No entries logged in this period.
                         </td>
                       </tr>
                     ) : (
-                      // Reverse order to show latest first? 
-                      // For a running balance, chronologically ascending matches paper book. 
-                      // We list them ascending so balance sums make logic, but reverse it if you want latest first.
-                      // Let's show ascending so the math adds up row by row.
-                      ledgerWithBalances.map((entry, idx) => (
+                      displayLedger.map((entry, idx) => (
                         <tr key={idx} style={{ backgroundColor: entry.type === 'COLLECTION' ? 'var(--success-light)' : 'transparent' }}>
                           <td>
                             {new Date(entry.date).toLocaleDateString('en-IN')}

@@ -41,9 +41,13 @@ export default function App() {
 
   // Supply Flow States
   const [supplyCustomerId, setSupplyCustomerId] = useState('');
-  const [step, setStep] = useState(1); // 1: Customer select, 2: Product qty checklist
-  const [supplyQuantities, setSupplyQuantities] = useState({});
-  const [mobileProductFilter, setMobileProductFilter] = useState('');
+  const [step, setStep] = useState(1); // 1: Customer select, 2: Checkout Cart Checklist
+  const [supplyCart, setSupplyCart] = useState([]);
+  const [showSelectorCard, setShowSelectorCard] = useState(false);
+  const [selectedCatId, setSelectedCatId] = useState('');
+  const [selectedBrandId, setSelectedBrandId] = useState('');
+  const [selectedProdId, setSelectedProdId] = useState('');
+  const [typedQty, setTypedQty] = useState('1');
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
 
@@ -195,16 +199,9 @@ export default function App() {
     Linking.openURL(`${apiUrl}/reports/ledger/${custId}/pdf`);
   };
 
-  // Quantity adjust handlers
-  const handleMobileQtyChange = (prodId, val) => {
-    const num = Math.max(0, parseInt(val) || 0);
-    setSupplyQuantities(prev => ({ ...prev, [prodId]: num }));
-  };
-
-  const adjustMobileQty = (prodId, delta) => {
-    const current = supplyQuantities[prodId] || 0;
-    const next = Math.max(0, current + delta);
-    setSupplyQuantities(prev => ({ ...prev, [prodId]: next }));
+  // Mobile cart helpers
+  const handleRemoveFromMobileCart = (itemId) => {
+    setSupplyCart(supplyCart.filter(item => item.id !== itemId));
   };
 
   const submitSupply = async (payloadProducts) => {
@@ -220,7 +217,7 @@ export default function App() {
       });
       if (res.ok) {
         Alert.alert("Success", "Supply transaction recorded!");
-        setSupplyQuantities({});
+        setSupplyCart([]);
         setSupplyCustomerId('');
         setActiveTab('dashboard');
         fetchData();
@@ -235,18 +232,12 @@ export default function App() {
 
   // Submit supply transaction
   const handleSaveSupply = async () => {
-    if (!supplyCustomerId) return;
-    const payloadProducts = Object.entries(supplyQuantities)
-      .filter(([_, qty]) => qty > 0)
-      .map(([prodId, qty]) => ({
-        productId: prodId,
-        quantity: qty
-      }));
+    if (!supplyCustomerId || supplyCart.length === 0) return;
 
-    if (payloadProducts.length === 0) {
-      Alert.alert("Error", "Please enter quantity for at least one product.");
-      return;
-    }
+    const payloadProducts = supplyCart.map(item => ({
+      productId: item.productId,
+      quantity: item.qty
+    }));
 
     let needsConfirmation = false;
     for (const item of payloadProducts) {
@@ -584,7 +575,8 @@ export default function App() {
                     style={[styles.callBtn, { backgroundColor: '#1e40af', marginTop: 8 }]} 
                     onPress={() => {
                       setSupplyCustomerId(selectedCustomer._id);
-                      setSupplyQuantities({});
+                      setSupplyCart([]);
+                      setShowSelectorCard(false);
                       setStep(2);
                       setActiveTab('supply');
                     }}
@@ -606,8 +598,8 @@ export default function App() {
                       .sort((a, b) => {
                         const dA = new Date(a.date).setHours(0, 0, 0, 0);
                         const dB = new Date(b.date).setHours(0, 0, 0, 0);
-                        if (dA !== dB) return dA - dB;
-                        return new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date);
+                        if (dA !== dB) return dB - dA;
+                        return new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date);
                       })
                       .map((log, idx) => {
                         const isSupply = log.grandTotal !== undefined;
@@ -650,7 +642,8 @@ export default function App() {
                     style={themeStyles.card} 
                     onPress={() => { 
                       setSupplyCustomerId(c._id); 
-                      setSupplyQuantities({});
+                      setSupplyCart([]);
+                      setShowSelectorCard(false);
                       setStep(2); 
                     }}
                   >
@@ -681,107 +674,217 @@ export default function App() {
                   ) : null;
                 })()}
 
-                <Text style={{ fontSize: 18, marginBottom: 12, color: isDark ? '#ffffff' : '#1e293b' }}>
-                  Enter Product Quantities:
+                {/* Supply Cart Items Table/List */}
+                <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10, color: isDark ? '#ffffff' : '#1e293b' }}>
+                  🛒 Delivery Items Checklist:
                 </Text>
 
-                {/* Search / Filter input */}
-                <TextInput
-                  style={[themeStyles.input, { marginBottom: 15 }]}
-                  placeholder="🔍 Search products by name..."
-                  placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
-                  value={mobileProductFilter}
-                  onChangeText={setMobileProductFilter}
-                />
-
-                {/* Group products by Category */}
-                {(() => {
-                  // Filter products
-                  const filtered = products.filter(p => {
-                    if (p.status !== 'Available') return false;
-                    if (!mobileProductFilter) return true;
-                    const search = mobileProductFilter.toLowerCase();
-                    const pName = p.name.toLowerCase();
-                    const bName = (p.brand?.name || '').toLowerCase();
-                    const cName = (p.category?.name || '').toLowerCase();
-                    return pName.includes(search) || bName.includes(search) || cName.includes(search);
-                  });
-
-                  // Group by category
-                  const grouped = {};
-                  filtered.forEach(p => {
-                    const catName = p.category?.name || 'Uncategorized';
-                    if (!grouped[catName]) grouped[catName] = [];
-                    grouped[catName].push(p);
-                  });
-
-                  const keys = Object.keys(grouped);
-                  if (keys.length === 0) {
-                    return (
-                      <View style={[themeStyles.card, { padding: 20 }]}>
-                        <Text style={{ textAlign: 'center', color: 'gray' }}>No active products match search.</Text>
+                {supplyCart.length === 0 ? (
+                  <View style={[themeStyles.card, { padding: 25, backgroundColor: isDark ? '#1e293b' : '#faf8f5', alignItems: 'center' }]}>
+                    <Text style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: 16 }}>No items added to this supply entry yet.</Text>
+                  </View>
+                ) : (
+                  supplyCart.map((item) => (
+                    <View key={item.id} style={[themeStyles.card, { display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, marginVertical: 4 }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>
+                          {item.brandName} {item.name}
+                        </Text>
+                        <Text style={themeStyles.textMuted}>
+                          Qty: {item.qty} {item.unit} x Rs.{item.price}
+                        </Text>
                       </View>
-                    );
-                  }
-
-                  return keys.map(catName => (
-                    <View key={catName} style={{ marginBottom: 20 }}>
-                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1e40af', textTransform: 'uppercase', marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#1e40af', paddingBottom: 2 }}>
-                        🥛 {catName}
-                      </Text>
-                      
-                      {grouped[catName].map(p => {
-                        const qty = supplyQuantities[p._id] || 0;
-                        return (
-                          <View key={p._id} style={[themeStyles.card, { display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, marginVertical: 4 }]}>
-                            <View style={{ flex: 1, marginRight: 10 }}>
-                              <Text style={{ fontSize: 16, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>
-                                {p.brand?.name} {p.name}
-                              </Text>
-                              <Text style={themeStyles.textMuted}>
-                                Rate: Rs.{p.sellingPrice} | Stock: {p.currentStock} {p.unit}
-                              </Text>
-                            </View>
-
-                            {/* Qty controls */}
-                            <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-                              <TouchableOpacity 
-                                style={[styles.qtyBtn, { backgroundColor: isDark ? '#334155' : '#cbd5e1' }]} 
-                                onPress={() => adjustMobileQty(p._id, -1)}
-                              >
-                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>-</Text>
-                              </TouchableOpacity>
-                              <TextInput 
-                                style={[themeStyles.input, { width: 50, height: 38, textAlign: 'center', marginHorizontal: 5, padding: 0, fontWeight: 'bold', fontSize: 16 }]} 
-                                keyboardType="numeric"
-                                value={qty > 0 ? qty.toString() : ''}
-                                placeholder="0"
-                                placeholderTextColor={isDark ? '#64748b' : '#cbd5e1'}
-                                onChangeText={text => handleMobileQtyChange(p._id, text)}
-                              />
-                              <TouchableOpacity 
-                                style={[styles.qtyBtn, { backgroundColor: isDark ? '#334155' : '#cbd5e1' }]} 
-                                onPress={() => adjustMobileQty(p._id, 1)}
-                              >
-                                <Text style={{ fontSize: 20, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b' }}>+</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        );
-                      })}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1e40af', marginRight: 5 }}>
+                          Rs.{item.qty * item.price}
+                        </Text>
+                        <TouchableOpacity 
+                          style={{ padding: 8, backgroundColor: '#fee2e2', borderRadius: 8 }} 
+                          onPress={() => handleRemoveFromMobileCart(item.id)}
+                        >
+                          <Text style={{ color: '#dc2626', fontWeight: 'bold', fontSize: 14 }}>🗑</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  ));
-                })()}
+                  ))
+                )}
 
-                {/* Calculate and show totals */}
+                {/* Show Inline Selector Card */}
+                {showSelectorCard ? (
+                  <View style={[themeStyles.card, { borderColor: '#1e40af', borderWidth: 2, marginTop: 15, padding: 15 }]}>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1e40af', marginBottom: 12 }}>
+                      🥛 Add Product Item
+                    </Text>
+
+                    {/* Category Selector */}
+                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
+                      1. Select Category:
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                      {categories.map(cat => (
+                        <TouchableOpacity 
+                          key={cat._id} 
+                          style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedCatId === cat._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
+                          onPress={() => {
+                            setSelectedCatId(cat._id);
+                            setSelectedBrandId('');
+                            setSelectedProdId('');
+                          }}
+                        >
+                          <Text style={{ color: selectedCatId === cat._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
+                            {cat.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+
+                    {/* Brand Selector */}
+                    {selectedCatId ? (
+                      <View>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
+                          2. Select Brand:
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                          {brands.filter(b => b.category?._id === selectedCatId).map(brand => (
+                            <TouchableOpacity 
+                              key={brand._id} 
+                              style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedBrandId === brand._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
+                              onPress={() => {
+                                setSelectedBrandId(brand._id);
+                                setSelectedProdId('');
+                              }}
+                            >
+                              <Text style={{ color: selectedBrandId === brand._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
+                                {brand.name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    ) : null}
+
+                    {/* Product Variant Selector */}
+                    {selectedBrandId ? (
+                      <View>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
+                          3. Select Product Variant:
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                          {products.filter(p => p.category?._id === selectedCatId && p.brand?._id === selectedBrandId && p.status === 'Available').map(p => (
+                            <TouchableOpacity 
+                              key={p._id} 
+                              style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedProdId === p._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
+                              onPress={() => {
+                                setSelectedProdId(p._id);
+                              }}
+                            >
+                              <Text style={{ color: selectedProdId === p._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
+                                {p.name} (Rs.{p.sellingPrice})
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    ) : null}
+
+                    {/* Quantity Picker */}
+                    {selectedProdId ? (
+                      <View style={{ marginTop: 10 }}>
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
+                          4. Enter Quantity:
+                        </Text>
+                        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+                          <TouchableOpacity 
+                            style={[styles.qtyBtn, { backgroundColor: '#e2e8f0', width: 44, height: 44 }]} 
+                            onPress={() => setTypedQty(Math.max(1, (parseInt(typedQty) || 1) - 1).toString())}
+                          >
+                            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1e293b' }}>-</Text>
+                          </TouchableOpacity>
+                          <TextInput 
+                            style={[themeStyles.input, { width: 80, height: 44, textAlign: 'center', marginHorizontal: 10, fontSize: 18, fontWeight: 'bold' }]} 
+                            keyboardType="numeric"
+                            value={typedQty}
+                            onChangeText={setTypedQty}
+                          />
+                          <TouchableOpacity 
+                            style={[styles.qtyBtn, { backgroundColor: '#cbd5e1', width: 44, height: 44 }]} 
+                            onPress={() => setTypedQty(((parseInt(typedQty) || 0) + 1).toString())}
+                          >
+                            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1e293b' }}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Add to list & Cancel buttons */}
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 5 }}>
+                          <TouchableOpacity 
+                            style={[styles.quickBtn, { backgroundColor: '#15803d', paddingVertical: 10 }]} 
+                            onPress={() => {
+                              const activeProd = products.find(p => p._id === selectedProdId);
+                              if (activeProd) {
+                                const cartItem = {
+                                  id: Date.now() + Math.random(),
+                                  productId: activeProd._id,
+                                  brandName: activeProd.brand?.name || '',
+                                  name: activeProd.name,
+                                  price: activeProd.sellingPrice,
+                                  qty: Number(typedQty) || 1,
+                                  unit: activeProd.unit
+                                };
+                                setSupplyCart([...supplyCart, cartItem]);
+                                setSelectedProdId('');
+                                setTypedQty('1');
+                                setShowSelectorCard(false);
+                              }
+                            }}
+                          >
+                            <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>✓ Add to List</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={[styles.quickBtn, { backgroundColor: '#64748b', paddingVertical: 10 }]} 
+                            onPress={() => {
+                              setShowSelectorCard(false);
+                              setSelectedProdId('');
+                              setSelectedBrandId('');
+                              setSelectedCatId('');
+                              setTypedQty('1');
+                            }}
+                          >
+                            <Text style={{ color: '#ffffff', fontWeight: 'bold' }}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={[styles.addBtn, { marginTop: 15 }]} 
+                    onPress={async () => {
+                      try {
+                        const catsRes = await fetch(`${apiUrl}/categories`);
+                        const cats = await catsRes.json();
+                        const brsRes = await fetch(`${apiUrl}/brands`);
+                        const brs = await brsRes.json();
+                        setCategories(cats);
+                        setBrands(brs);
+                      } catch (err) {
+                        console.error(err);
+                      }
+                      setSelectedCatId('');
+                      setSelectedBrandId('');
+                      setSelectedProdId('');
+                      setTypedQty('1');
+                      setShowSelectorCard(true);
+                    }}
+                  >
+                    <Text style={styles.btnText}>➕ Add Product Item</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Grand Total & Checkout Submit bar */}
                 {(() => {
-                  const total = Object.entries(supplyQuantities).reduce((sum, [prodId, qty]) => {
-                    const p = products.find(prod => prod._id === prodId);
-                    return sum + (p ? p.sellingPrice * qty : 0);
-                  }, 0);
-
+                  const total = supplyCart.reduce((sum, item) => sum + (item.price * item.qty), 0);
                   return (
-                    <View style={{ marginTop: 10, borderTopWidth: 2, borderTopColor: '#cbd5e1', paddingTop: 15 }}>
+                    <View style={{ marginTop: 25, borderTopWidth: 2, borderTopColor: '#cbd5e1', paddingTop: 15 }}>
                       <Text style={{ fontSize: 18, fontWeight: 'bold', color: isDark ? '#ffffff' : '#1e293b', marginBottom: 10 }}>
                         Total Value: <Text style={{ color: '#dc2626', fontSize: 24, fontWeight: '900' }}>Rs. {total.toFixed(2)}</Text>
                       </Text>

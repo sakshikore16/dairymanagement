@@ -13,7 +13,6 @@ export default function Transactions({
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [productFilterText, setProductFilterText] = useState('');
 
   // Form State
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -22,8 +21,12 @@ export default function Transactions({
     new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
   );
   
-  // supplyQuantities state maps productId -> quantity
-  const [supplyQuantities, setSupplyQuantities] = useState({});
+  // Dynamic Items list state: [{ id, categoryId, brandId, productId, quantity }]
+  const [items, setItems] = useState([]);
+
+  // Master lists for selectors
+  const [categories, setCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
 
   useEffect(() => {
     if (triggerAddOpen) {
@@ -32,11 +35,24 @@ export default function Transactions({
     }
   }, [triggerAddOpen]);
 
+  const loadSelectors = async () => {
+    try {
+      const cats = await api.getCategories();
+      const brs = await api.getBrands();
+      setCategories(cats);
+      setBrands(brs);
+    } catch (err) {
+      console.error("Error loading master selectors: ", err);
+    }
+  };
+
   const handleOpenRecordSupply = () => {
+    loadSelectors();
     setTxDate(new Date().toISOString().split('T')[0]);
     setTxTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }));
-    setSupplyQuantities({});
-    setProductFilterText('');
+    
+    // Start with one empty row
+    setItems([{ id: Date.now(), categoryId: '', brandId: '', productId: '', quantity: 1 }]);
 
     if (preSelectedCustomerId) {
       setSelectedCustomerId(preSelectedCustomerId);
@@ -53,22 +69,38 @@ export default function Transactions({
     }
   };
 
-  // Quantity updates
-  const handleQtyChange = (prodId, val) => {
-    const num = Math.max(0, parseInt(val) || 0);
-    setSupplyQuantities(prev => ({
-      ...prev,
-      [prodId]: num
-    }));
+  // Add a new row to items list
+  const handleAddItemRow = () => {
+    setItems([
+      ...items,
+      { id: Date.now() + Math.random(), categoryId: '', brandId: '', productId: '', quantity: 1 }
+    ]);
   };
 
-  const adjustQty = (prodId, delta) => {
-    const current = supplyQuantities[prodId] || 0;
-    const next = Math.max(0, current + delta);
-    setSupplyQuantities(prev => ({
-      ...prev,
-      [prodId]: next
-    }));
+  // Remove a row
+  const handleRemoveItemRow = (id) => {
+    if (items.length === 1) return; // Keep at least one row
+    setItems(items.filter(item => item.id !== id));
+  };
+
+  // Update specific field in a row
+  const handleUpdateItemRow = (id, field, value) => {
+    setItems(
+      items.map(item => {
+        if (item.id === id) {
+          const updated = { ...item, [field]: value };
+          // Reset child cascades if parent changes
+          if (field === 'categoryId') {
+            updated.brandId = '';
+            updated.productId = '';
+          } else if (field === 'brandId') {
+            updated.productId = '';
+          }
+          return updated;
+        }
+        return item;
+      })
+    );
   };
 
   // Submit transaction to server
@@ -79,17 +111,17 @@ export default function Transactions({
       return;
     }
 
-    const payloadProducts = Object.entries(supplyQuantities)
-      .filter(([_, qty]) => qty > 0)
-      .map(([prodId, qty]) => ({
-        productId: prodId,
-        quantity: qty
-      }));
-
-    if (payloadProducts.length === 0) {
-      alert("Please enter a quantity for at least one product.");
+    // Verify all rows are filled out
+    const incompleteRow = items.find(item => !item.categoryId || !item.brandId || !item.productId || !item.quantity);
+    if (incompleteRow) {
+      alert("Please select Category, Brand, Product and Quantity for all rows, or delete the empty rows.");
       return;
     }
+
+    const payloadProducts = items.map(item => ({
+      productId: item.productId,
+      quantity: Number(item.quantity)
+    }));
 
     // Verify stock availability
     for (const item of payloadProducts) {
@@ -120,7 +152,7 @@ export default function Transactions({
 
   // Duplicate past transaction
   const handleDuplicate = async (txId) => {
-    if (window.confirm("Duplicate this transaction? All items and quantities will be copied, stock will automatically deduct, and a new invoice generated for today.")) {
+    if (window.confirm("Duplicate this transaction? All items and quantities will be copied, stock will deduct, and a new invoice generated for today.")) {
       try {
         await api.duplicateTransaction(txId);
         onRefresh();
@@ -130,35 +162,11 @@ export default function Transactions({
     }
   };
 
-  // Group active products by Category, then Brand
-  const getGroupedProducts = () => {
-    const groups = {};
-    const filtered = productsList.filter(p => {
-      if (p.status !== 'Available') return false;
-      if (!productFilterText) return true;
-      const search = productFilterText.toLowerCase();
-      const pName = p.name.toLowerCase();
-      const bName = (p.brand?.name || '').toLowerCase();
-      const cName = (p.category?.name || '').toLowerCase();
-      return pName.includes(search) || bName.includes(search) || cName.includes(search);
-    });
-
-    filtered.forEach(p => {
-      const cat = p.category?.name || 'Uncategorized Category';
-      const brand = p.brand?.name || 'Generic Brand';
-      if (!groups[cat]) groups[cat] = {};
-      if (!groups[cat][brand]) groups[cat][brand] = [];
-      groups[cat][brand].push(p);
-    });
-    return groups;
-  };
-
-  const groupedProducts = getGroupedProducts();
-
   // Calculate Running Grand Total
-  const grandTotal = Object.entries(supplyQuantities).reduce((sum, [prodId, qty]) => {
-    const prod = productsList.find(p => p._id === prodId);
-    return sum + (prod ? prod.sellingPrice * qty : 0);
+  const grandTotal = items.reduce((sum, item) => {
+    if (!item.productId) return sum;
+    const prod = productsList.find(p => p._id === item.productId);
+    return sum + (prod ? prod.sellingPrice * (Number(item.quantity) || 0) : 0);
   }, 0);
 
   // Filter transaction list
@@ -170,6 +178,11 @@ export default function Transactions({
     return custName.toLowerCase().includes(match) || 
       areaName.toLowerCase().includes(match) || 
       invNo.toLowerCase().includes(match);
+  });
+
+  // Sort transaction logs chronologically (newest first / latest at the top)
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+    return new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date);
   });
 
   return (
@@ -211,12 +224,12 @@ export default function Transactions({
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.length === 0 ? (
+              {sortedTransactions.length === 0 ? (
                 <tr>
                   <td colSpan="6" style={{ textAlign: 'center', padding: '25px' }}>No transactions recorded yet.</td>
                 </tr>
               ) : (
-                filteredTransactions.map((tx) => (
+                sortedTransactions.map((tx) => (
                   <tr key={tx._id}>
                     <td>
                       {new Date(tx.date).toLocaleDateString('en-IN')}
@@ -272,14 +285,14 @@ export default function Transactions({
       {/* RECORD TRANSACTION MODAL */}
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '850px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-content" style={{ maxWidth: '950px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <h2>🥛 Record Daily Supply</h2>
             
             <form onSubmit={handleSaveTransaction} style={{ marginTop: '15px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div style={{ overflowY: 'auto', paddingRight: '5px', flex: 1 }}>
                 
                 {/* Meta Inputs Grid */}
-                <div className="grid-3" style={{ gap: '15px', marginBottom: '15px' }}>
+                <div className="grid-3" style={{ gap: '15px', marginBottom: '20px' }}>
                   <div className="form-group">
                     <label className="form-label">Delivery Date</label>
                     <input type="date" className="form-control" required value={txDate} onChange={e => setTxDate(e.target.value)} />
@@ -307,84 +320,126 @@ export default function Transactions({
                   </div>
                 </div>
 
+                {/* Items Row Builder Table */}
                 <div style={{ borderTop: '2px solid var(--border-color)', paddingTop: '15px', marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>🛒 Delivery Items Checklist</h3>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      placeholder="🔍 Quick filter items by name..." 
-                      value={productFilterText} 
-                      onChange={e => setProductFilterText(e.target.value)}
-                      style={{ maxWidth: '300px', minHeight: '38px', padding: '5px 10px', fontSize: '14px' }}
-                    />
+                  <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '15px' }}>🛒 Delivery Items List</h3>
+
+                  <div style={{ minWidth: '700px', overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'var(--bg-paper)' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '10px', fontSize: '14px', width: '22%' }}>Product Category</th>
+                          <th style={{ padding: '10px', fontSize: '14px', width: '22%' }}>Brand</th>
+                          <th style={{ padding: '10px', fontSize: '14px', width: '30%' }}>Product Variant</th>
+                          <th style={{ padding: '10px', fontSize: '14px', width: '16%', textAlign: 'center' }}>Quantity</th>
+                          <th style={{ padding: '10px', fontSize: '14px', width: '10%', textAlign: 'center' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((item) => {
+                          // Cascading dropdowns filtered options
+                          const filteredBrands = brands.filter(b => b.category?._id === item.categoryId);
+                          const filteredProducts = productsList.filter(p => 
+                            p.category?._id === item.categoryId && 
+                            p.brand?._id === item.brandId &&
+                            p.status === 'Available'
+                          );
+                          const activeProduct = productsList.find(p => p._id === item.productId);
+
+                          return (
+                            <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '8px' }}>
+                                <select 
+                                  className="form-control"
+                                  value={item.categoryId}
+                                  onChange={e => handleUpdateItemRow(item.id, 'categoryId', e.target.value)}
+                                  style={{ minHeight: '38px', fontSize: '14px' }}
+                                >
+                                  <option value="">-- Select Category --</option>
+                                  {categories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                </select>
+                              </td>
+
+                              <td style={{ padding: '8px' }}>
+                                <select 
+                                  className="form-control"
+                                  value={item.brandId}
+                                  onChange={e => handleUpdateItemRow(item.id, 'brandId', e.target.value)}
+                                  disabled={!item.categoryId}
+                                  style={{ minHeight: '38px', fontSize: '14px' }}
+                                >
+                                  <option value="">-- Select Brand --</option>
+                                  {filteredBrands.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
+                                </select>
+                              </td>
+
+                              <td style={{ padding: '8px' }}>
+                                <select 
+                                  className="form-control"
+                                  value={item.productId}
+                                  onChange={e => handleUpdateItemRow(item.id, 'productId', e.target.value)}
+                                  disabled={!item.brandId}
+                                  style={{ minHeight: '38px', fontSize: '14px' }}
+                                >
+                                  <option value="">-- Select Product --</option>
+                                  {filteredProducts.map(p => (
+                                    <option key={p._id} value={p._id}>
+                                      {p.name} (Rs. {p.sellingPrice})
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              <td style={{ padding: '8px', textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                                  <input 
+                                    type="number"
+                                    min="1"
+                                    className="form-control"
+                                    value={item.quantity}
+                                    onChange={e => handleUpdateItemRow(item.id, 'quantity', e.target.value)}
+                                    disabled={!item.productId}
+                                    style={{ width: '70px', minHeight: '38px', textAlign: 'center', fontWeight: 'bold' }}
+                                  />
+                                  {activeProduct && (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                      {activeProduct.unit}
+                                    </span>
+                                  )}
+                                </div>
+                                {activeProduct && (
+                                  <div style={{ fontSize: '11px', color: activeProduct.currentStock <= activeProduct.minimumStockAlert ? 'var(--danger)' : 'var(--text-muted)', marginTop: '2px' }}>
+                                    Stock: {activeProduct.currentStock}
+                                  </div>
+                                )}
+                              </td>
+
+                              <td style={{ padding: '8px', textAlign: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline"
+                                  onClick={() => handleRemoveItemRow(item.id)}
+                                  disabled={items.length === 1}
+                                  style={{ minHeight: '38px', borderColor: 'var(--danger)', color: 'var(--danger)', padding: '0 12px' }}
+                                >
+                                  🗑
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
 
-                  {/* Grouped Product List */}
-                  {Object.keys(groupedProducts).length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', backgroundColor: 'var(--bg-paper)', borderRadius: '12px' }}>
-                      No active products found matching the filter.
-                    </div>
-                  ) : (
-                    Object.entries(groupedProducts).map(([catName, brandsMap]) => (
-                      <div key={catName} style={{ marginBottom: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
-                        <div style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', padding: '8px 15px', fontWeight: 'bold', fontSize: '16px' }}>
-                          🥛 {catName}
-                        </div>
-                        <div style={{ padding: '15px', backgroundColor: 'var(--bg-card)' }}>
-                          {Object.entries(brandsMap).map(([brandName, productsArray]) => (
-                            <div key={brandName} style={{ marginBottom: '15px' }}>
-                              <h4 style={{ fontSize: '14px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '3px', marginBottom: '8px', fontWeight: 'bold' }}>
-                                {brandName}
-                              </h4>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {productsArray.map(p => (
-                                  <div key={p._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', backgroundColor: 'var(--bg-paper)', borderRadius: '8px', flexWrap: 'wrap', gap: '10px' }}>
-                                    <div style={{ flex: 1, minWidth: '200px' }}>
-                                      <strong style={{ fontSize: '16px' }}>{p.name}</strong>
-                                      <br />
-                                      <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                                        Price: Rs. {p.sellingPrice.toFixed(2)} | Stock: {p.currentStock} {p.unit}
-                                      </span>
-                                    </div>
-                                    
-                                    {/* Qty Counter controls */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                      <button 
-                                        type="button" 
-                                        onClick={() => adjustQty(p._id, -1)}
-                                        className="btn btn-outline"
-                                        style={{ minHeight: '34px', minWidth: '34px', padding: 0, fontSize: '18px', fontWeight: 'bold' }}
-                                      >
-                                        -
-                                      </button>
-                                      <input 
-                                        type="number"
-                                        min="0"
-                                        className="form-control"
-                                        value={supplyQuantities[p._id] || ''}
-                                        placeholder="0"
-                                        onChange={e => handleQtyChange(p._id, e.target.value)}
-                                        style={{ width: '60px', minHeight: '34px', textAlign: 'center', fontSize: '16px', fontWeight: 'bold', padding: 0 }}
-                                      />
-                                      <button 
-                                        type="button" 
-                                        onClick={() => adjustQty(p._id, 1)}
-                                        className="btn btn-outline"
-                                        style={{ minHeight: '34px', minWidth: '34px', padding: 0, fontSize: '18px', fontWeight: 'bold' }}
-                                      >
-                                        +
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  )}
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={handleAddItemRow}
+                    style={{ marginTop: '15px', fontSize: '15px', minHeight: '40px' }}
+                  >
+                    ➕ Add Another Product Item
+                  </button>
                 </div>
               </div>
 
