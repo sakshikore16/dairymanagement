@@ -99,26 +99,26 @@ export default function Transactions({
             if (filteredBrands.length === 1) {
               updated.brandId = filteredBrands[0]._id;
               
-              // Auto-select product if only one exists for this brand
+              // Auto-select first product if any exists for this brand
               const filteredProds = productsList.filter(p => 
                 p.category?._id === value && 
                 p.brand?._id === filteredBrands[0]._id &&
                 p.status === 'Available'
               );
-              if (filteredProds.length === 1) {
+              if (filteredProds.length >= 1) {
                 updated.productId = filteredProds[0]._id;
               }
             }
           } else if (field === 'brandId') {
             updated.productId = '';
             
-            // Auto-select product if only one exists for this brand
+            // Auto-select first product if any exists for this brand
             const filteredProds = productsList.filter(p => 
               p.category?._id === item.categoryId && 
               p.brand?._id === value &&
               p.status === 'Available'
             );
-            if (filteredProds.length === 1) {
+            if (filteredProds.length >= 1) {
               updated.productId = filteredProds[0]._id;
             }
           }

@@ -719,7 +719,7 @@ export default function App() {
                                 p.brand?._id === filteredBrands[0]._id &&
                                 p.status === 'Available'
                               );
-                              if (filteredProds.length === 1) {
+                              if (filteredProds.length >= 1) {
                                 setSelectedProdId(filteredProds[0]._id);
                               } else {
                                 setSelectedProdId('');
@@ -760,7 +760,7 @@ export default function App() {
                                       p.brand?._id === brand._id &&
                                       p.status === 'Available'
                                     );
-                                    if (filteredProds.length === 1) {
+                                    if (filteredProds.length >= 1) {
                                       setSelectedProdId(filteredProds[0]._id);
                                     } else {
                                       setSelectedProdId('');
