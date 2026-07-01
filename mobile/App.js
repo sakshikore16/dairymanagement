@@ -239,27 +239,7 @@ export default function App() {
       quantity: item.qty
     }));
 
-    let needsConfirmation = false;
-    for (const item of payloadProducts) {
-      const prod = products.find(p => p._id === item.productId);
-      if (prod && prod.currentStock < item.quantity) {
-        needsConfirmation = true;
-        break;
-      }
-    }
-
-    if (needsConfirmation) {
-      Alert.alert(
-        "Low Stock Warning",
-        "Some items exceed current stock. Selling them will drive inventory negative. Proceed?",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Yes, Save", onPress: () => submitSupply(payloadProducts) }
-        ]
-      );
-    } else {
-      await submitSupply(payloadProducts);
-    }
+    await submitSupply(payloadProducts);
   };
 
   // Record money collection
@@ -758,64 +738,80 @@ export default function App() {
                     </ScrollView>
 
                     {/* Brand Selector */}
-                    {selectedCatId ? (
-                      <View>
-                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
-                          2. Select Brand:
-                        </Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                          {brands.filter(b => b.category?._id === selectedCatId).map(brand => (
-                            <TouchableOpacity 
-                              key={brand._id} 
-                              style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedBrandId === brand._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
-                              onPress={() => {
-                                setSelectedBrandId(brand._id);
-                                
-                                // Auto-select Product if only one exists for this category/brand
-                                const filteredProds = products.filter(p => 
-                                  p.category?._id === selectedCatId && 
-                                  p.brand?._id === brand._id &&
-                                  p.status === 'Available'
-                                );
-                                if (filteredProds.length === 1) {
-                                  setSelectedProdId(filteredProds[0]._id);
-                                } else {
-                                  setSelectedProdId('');
-                                }
-                              }}
-                            >
-                              <Text style={{ color: selectedBrandId === brand._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
-                                {brand.name}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      </View>
-                    ) : null}
+                    {(() => {
+                      const filteredBrands = brands.filter(b => b.category?._id === selectedCatId);
+                      if (selectedCatId && filteredBrands.length > 1) {
+                        return (
+                          <View>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
+                              2. Select Brand:
+                            </Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                              {filteredBrands.map(brand => (
+                                <TouchableOpacity 
+                                  key={brand._id} 
+                                  style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedBrandId === brand._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
+                                  onPress={() => {
+                                    setSelectedBrandId(brand._id);
+                                    
+                                    // Auto-select Product if only one exists for this category/brand
+                                    const filteredProds = products.filter(p => 
+                                      p.category?._id === selectedCatId && 
+                                      p.brand?._id === brand._id &&
+                                      p.status === 'Available'
+                                    );
+                                    if (filteredProds.length === 1) {
+                                      setSelectedProdId(filteredProds[0]._id);
+                                    } else {
+                                      setSelectedProdId('');
+                                    }
+                                  }}
+                                >
+                                  <Text style={{ color: selectedBrandId === brand._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
+                                    {brand.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Product Variant Selector */}
-                    {selectedBrandId ? (
-                      <View>
-                        <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
-                          3. Select Product Variant:
-                        </Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                          {products.filter(p => p.category?._id === selectedCatId && p.brand?._id === selectedBrandId && p.status === 'Available').map(p => (
-                            <TouchableOpacity 
-                              key={p._id} 
-                              style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedProdId === p._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
-                              onPress={() => {
-                                setSelectedProdId(p._id);
-                              }}
-                            >
-                              <Text style={{ color: selectedProdId === p._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
-                                {p.name} (Rs.{p.sellingPrice})
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      </View>
-                    ) : null}
+                    {(() => {
+                      const filteredProds = products.filter(p => 
+                        p.category?._id === selectedCatId && 
+                        p.brand?._id === selectedBrandId &&
+                        p.status === 'Available'
+                      );
+                      if (selectedBrandId && filteredProds.length > 1) {
+                        return (
+                          <View>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: isDark ? '#cbd5e1' : '#475569', marginBottom: 4 }}>
+                              3. Select Product Variant:
+                            </Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                              {filteredProds.map(p => (
+                                <TouchableOpacity 
+                                  key={p._id} 
+                                  style={[themeStyles.card, { paddingVertical: 8, paddingHorizontal: 12, marginRight: 8, backgroundColor: selectedProdId === p._id ? '#1e40af' : (isDark ? '#334155' : '#cbd5e1') }]}
+                                  onPress={() => {
+                                    setSelectedProdId(p._id);
+                                  }}
+                                >
+                                  <Text style={{ color: selectedProdId === p._id ? '#ffffff' : (isDark ? '#e2e8f0' : '#1e293b'), fontWeight: 'bold' }}>
+                                    {p.name} (Rs.{p.sellingPrice})
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Quantity Picker */}
                     {selectedProdId ? (

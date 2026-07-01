@@ -149,16 +149,7 @@ export default function Transactions({
       quantity: Number(item.quantity)
     }));
 
-    // Verify stock availability
-    for (const item of payloadProducts) {
-      const prod = productsList.find(p => p._id === item.productId);
-      if (prod && prod.currentStock < item.quantity) {
-        const proceed = window.confirm(
-          `Product "${prod.brand?.name} ${prod.name}" has only ${prod.currentStock} units in stock. Selling ${item.quantity} will make inventory negative. Do you want to proceed?`
-        );
-        if (!proceed) return;
-      }
-    }
+    // Low stock checks removed per user request
 
     const payload = {
       customerId: selectedCustomerId,
@@ -387,33 +378,45 @@ export default function Transactions({
                               </td>
 
                               <td style={{ padding: '8px' }}>
-                                <select 
-                                  className="form-control"
-                                  value={item.brandId}
-                                  onChange={e => handleUpdateItemRow(item.id, 'brandId', e.target.value)}
-                                  disabled={!item.categoryId}
-                                  style={{ minHeight: '38px', fontSize: '14px' }}
-                                >
-                                  <option value="">-- Select Brand --</option>
-                                  {filteredBrands.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
-                                </select>
+                                {filteredBrands.length === 1 && item.brandId ? (
+                                  <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-paper)', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)', border: '1px solid var(--border-color)', minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                                    {filteredBrands[0].name}
+                                  </div>
+                                ) : (
+                                  <select 
+                                    className="form-control"
+                                    value={item.brandId}
+                                    onChange={e => handleUpdateItemRow(item.id, 'brandId', e.target.value)}
+                                    disabled={!item.categoryId}
+                                    style={{ minHeight: '38px', fontSize: '14px' }}
+                                  >
+                                    <option value="">-- Select Brand --</option>
+                                    {filteredBrands.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
+                                  </select>
+                                )}
                               </td>
 
                               <td style={{ padding: '8px' }}>
-                                <select 
-                                  className="form-control"
-                                  value={item.productId}
-                                  onChange={e => handleUpdateItemRow(item.id, 'productId', e.target.value)}
-                                  disabled={!item.brandId}
-                                  style={{ minHeight: '38px', fontSize: '14px' }}
-                                >
-                                  <option value="">-- Select Product --</option>
-                                  {filteredProducts.map(p => (
-                                    <option key={p._id} value={p._id}>
-                                      {p.name} (Rs. {p.sellingPrice})
-                                    </option>
-                                  ))}
-                                </select>
+                                {filteredProducts.length === 1 && item.productId ? (
+                                  <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-paper)', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold', color: 'var(--text-main)', border: '1px solid var(--border-color)', minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                                    {filteredProducts[0].name} (Rs. {filteredProducts[0].sellingPrice})
+                                  </div>
+                                ) : (
+                                  <select 
+                                    className="form-control"
+                                    value={item.productId}
+                                    onChange={e => handleUpdateItemRow(item.id, 'productId', e.target.value)}
+                                    disabled={!item.brandId}
+                                    style={{ minHeight: '38px', fontSize: '14px' }}
+                                  >
+                                    <option value="">-- Select Product --</option>
+                                    {filteredProducts.map(p => (
+                                      <option key={p._id} value={p._id}>
+                                        {p.name} (Rs. {p.sellingPrice})
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
                               </td>
 
                               <td style={{ padding: '8px', textAlign: 'center' }}>
@@ -434,7 +437,7 @@ export default function Transactions({
                                   )}
                                 </div>
                                 {activeProduct && (
-                                  <div style={{ fontSize: '11px', color: activeProduct.currentStock <= activeProduct.minimumStockAlert ? 'var(--danger)' : 'var(--text-muted)', marginTop: '2px' }}>
+                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                                     Stock: {activeProduct.currentStock}
                                   </div>
                                 )}
